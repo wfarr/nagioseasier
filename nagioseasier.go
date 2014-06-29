@@ -1,6 +1,7 @@
 package nagioseasier
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"strings"
@@ -8,22 +9,23 @@ import (
 
 // QueryHandler is used to send queries to the query handler socket
 type QueryHandler struct {
-	Address string
+	Address *net.UnixAddr
 }
 
 // Create a QueryHandler
-func Create(address string) (*QueryHandler, error) {
+func Create(address string) *QueryHandler {
 	if address == "" {
 		address = "/var/lib/nagios/rw/nagios.qh"
 	}
 
-	qh := &QueryHandler{Address: address}
-	return qh, nil
+	addr := &net.UnixAddr{Name: address, Net: "unix"}
+	qh := &QueryHandler{Address: addr}
+	return qh
 }
 
-// Query performs a query using the QueryHandler
+// Query performs a query with the QueryHandler socket
 func (qh *QueryHandler) Query(command string) (string, error) {
-	conn, err := net.Dial("unix", qh.Address)
+	conn, err := net.DialUnix("unix", nil, qh.Address)
 	if err != nil {
 		return "", err
 	}
@@ -34,25 +36,19 @@ func (qh *QueryHandler) Query(command string) (string, error) {
 		return "", err
 	}
 
-	buf := make([]byte, 4096)
-	output := ""
-	for {
-		n, err := conn.Read(buf[:])
+	buf := new(bytes.Buffer)
+	n, err := buf.ReadFrom(conn)
 
-		if err != nil {
-			return scrub(output), err
-		}
-
-		if n == 0 {
-			// connection closed by socket
-			return scrub(output), nil
-		}
-
-		output += string(buf[0:n])
+	if n == 0 {
+		return "", fmt.Errorf("no data received")
 	}
+
+	return scrub(buf.String()), err
 }
 
-func scrub(input string) (output string) {
+func scrub(input string) string {
+	var output string
+
 	// get rid of pesky null chars
 	output = strings.Replace(input, "\000", "", -1)
 
@@ -65,5 +61,5 @@ func scrub(input string) (output string) {
 	// trim spaces
 	output = strings.TrimSpace(output)
 
-	return
+	return output
 }
