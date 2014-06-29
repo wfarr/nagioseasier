@@ -8,23 +8,32 @@ import (
 	"testing"
 )
 
-func TestQuery(t *testing.T) {
+func mockSocket() (*net.UnixListener, error) {
 	fp := filepath.Join(os.TempDir(), "nagioseasier.qh")
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Net: "unix", Name: fp})
-	defer listener.Close()
+
+	if err != nil {
+		return nil, err
+	}
 
 	go func() {
-		conn, err := listener.AcceptUnix()
+		conn, _ := listener.AcceptUnix()
 		defer conn.Close()
-
-		if err != nil {
-			t.Error(err)
-		}
-
 		conn.Write([]byte(fmt.Sprintf("loltests")))
 	}()
 
-	qh := Create(fp)
+	return listener, nil
+}
+
+func TestQuery(t *testing.T) {
+	listener, err := mockSocket()
+	if err != nil {
+		t.Error(err)
+	}
+
+	defer listener.Close()
+
+	qh := Create(listener.Addr().String())
 
 	resp, err := qh.Query("help")
 	if err != nil {
